@@ -19,7 +19,8 @@ need ffmpeg
 need ffprobe
 
 export PYTHONUNBUFFERED=1
-exec python3 - "$ROOT" <<'PY'
+# Heredoc trên fd 3 — stdin (fd 0) vẫn là terminal để input() đọc được.
+exec python3 /dev/fd/3 "$ROOT" 3<<'PY'
 from __future__ import annotations
 
 import json
@@ -89,13 +90,24 @@ def die(msg: str, code: int = 1) -> None:
     raise SystemExit(code)
 
 
+def read_line(prompt: str = "") -> str:
+    """Đọc 1 dòng từ terminal thật, không phụ thuộc stdin của process."""
+    if prompt:
+        print(prompt, end="", flush=True)
+    try:
+        with open("/dev/tty", encoding="utf-8", errors="replace") as tty:
+            line = tty.readline()
+    except OSError:
+        line = sys.stdin.readline()
+    if line == "":
+        die("Không đọc được terminal. Chạy ./run.sh trong một terminal tương tác.")
+    return line.rstrip("\n\r")
+
+
 def ask(prompt: str, required: bool = True, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
     while True:
-        try:
-            raw = input(f"{prompt}{suffix}: ").strip()
-        except EOFError:
-            die("Không đọc được stdin")
+        raw = read_line(f"{prompt}{suffix}: ").strip()
         if not raw and default is not None:
             return default
         if raw or not required:
@@ -108,10 +120,7 @@ def ask_block(prompt: str, required: bool = True) -> str:
     print("  (gõ END trên một dòng để kết thúc)")
     lines: list[str] = []
     while True:
-        try:
-            line = input()
-        except EOFError:
-            die("Không đọc được stdin")
+        line = read_line()
         if line.strip() == "END":
             text = "\n".join(lines).strip()
             if text or not required:
@@ -381,10 +390,7 @@ def print_summary(cfg: dict) -> None:
         print(f"      {s['prompt'][:90].replace(chr(10), ' ')}")
     print("Không research / review / TTS / upscale / Telegram")
     print("Enter để chạy · Ctrl+C để hủy")
-    try:
-        input()
-    except EOFError:
-        die("Hủy")
+    read_line()
 
 
 def apply_video_model(veo: dict) -> None:
